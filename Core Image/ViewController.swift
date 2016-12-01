@@ -18,45 +18,123 @@ class ViewController: UIViewController {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
         
-        //Ensure image isn't nil; 
-        //convert imageview's image to cgImage        
+        //影像處理的三個案例 
+        // 1. 使用單一過濾器； 
+        self.runSepia()
+        // 2. 在GPU下使用單一過濾器； 
+        //self.runGPU()
+        //3. 在GPU下使用多重過濾器
+        //self.runMultipleFilter()
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        // Dispose of any resources that can be recreated.
+    }
+    
+    func runSepia(){
+        //Ensure image isn't nil;
+        //convert imageview's image to cgImage
         guard let image = imageView?.image, let cgimg = image.cgImage else {
             print("image view doesn't have an image")
             return
         }
         
-        /* 為效能問題, 將影像處理透過 CIContext 由CPU 轉到 GPU 處理 -- Step A  */
-        // 建立新的 OpenGL ES context, 它是一個高速的圖形API, 由 GPU 直接產生
-        // 此例使用的是 OpenGL ES V2 的版本. 大部份 iOS 設備支援此版本. 
-        // 最新出到 ES V3. 如果設備有支援, 改為 openGLES3 即可
-        let openGLContext = EAGLContext(api: .openGLES2)
-        // 因為我們不能直接使用 OpenGL ES context 做影像過濾, 所以在這將它轉為 CIContext
-        let context = CIContext(eaglContext: openGLContext!)
-        
         //Core Image 是作用在 CIImage, 而不是 UIImage. 所以，所有的UIImage 必須都轉成 CIImage
         let coreImage = CIImage(cgImage: cgimg)
         
+        /* --------------- 使用單一過濾器 ----------------------------------- */
         //使用 Core Image 內建的過濾器
         let filter = CIFilter(name: "CISepiaTone")
-        
         //將圖放到過濾器中
         filter?.setValue(coreImage, forKey: kCIInputImageKey)
         //指定過濾強度為 50%
         filter?.setValue(0.5, forKey: kCIInputIntensityKey)
-        
+
         //呼叫 CoreImage 執行照片過濾, 並強制轉為 CIImage 格式
         if let output = filter?.value(forKey: kCIOutputImageKey) as?  CIImage{
             
-        /* CPU 的處理程序
-            //將 CIImage 轉為 UIImage, 準備做輸出使用
-            let filteredImage = UIImage(ciImage: output)
-            //將 ImageView 的圖片, 改為過濾過的圖片
-            imageView?.image = filteredImage
-        */
+            /* CPU 的處理程序 */
+             //將 CIImage 轉為 UIImage, 準備做輸出使用
+             let filteredImage = UIImage(ciImage: output)
+             //將 ImageView 的圖片, 改為過濾過的圖片
+             imageView?.image = filteredImage
+        }
+    }
+    
+    func runMultipleFilter(){
+        //Ensure image isn't nil;
+        //convert imageview's image to cgImage
+        guard let image = imageView?.image, let cgimg = image.cgImage else {
+            print("image view doesn't have an image")
+            return
+        }
         
-        /*  呼叫 GPU 執行影像處理 Step B  */
+        //Core Image 是作用在 CIImage, 而不是 UIImage. 所以，所有的UIImage 必須都轉成 CIImage
+        let coreImage = CIImage(cgImage: cgimg)
+        
+        /* 為效能問題, 將影像處理透過 CIContext 由CPU 轉到 GPU 處理 -- Step A  */
+        let openGLContext = EAGLContext(api: .openGLES2)
+        // 因為我們不能直接使用 OpenGL ES context 做影像過濾, 所以在這將它轉為 CIContext
+        let context = CIContext(eaglContext: openGLContext!)
+        
+        /* --------------- combination of multiple filters -----------------*/
+        let sepiaFilter = CIFilter(name: "CISepiaTone")
+        sepiaFilter?.setValue(coreImage, forKey: kCIInputImageKey)
+        sepiaFilter?.setValue(1, forKey: kCIInputIntensityKey)
+        
+        //呼叫 CoreImage 執行照片過濾, 並強制轉為 CIImage 格式
+        if let sepiaOutput = sepiaFilter?.value(forKey: kCIOutputImageKey) as?  CIImage{
+            
+            /* CPU 的處理程序 */
+            
+            //建立 Exposure Filter, 以 sepiaOutput 當處理對象
+            let exposureFilter = CIFilter(name: "CIExposureAdjust")
+            exposureFilter?.setValue(sepiaOutput, forKey: kCIInputImageKey)
+            exposureFilter?.setValue(1, forKey: kCIInputEVKey)
+            
+            if let exposureOutput = exposureFilter?.value(forKey: kCIOutputImageKey) as? CIImage{
+                //將 CIImage 轉為 UIImage, 準備做輸出使用
+                let output = context.createCGImage(exposureOutput, from: exposureOutput.extent)
+                //將 ImageView 的圖片, 改為過濾過的圖片
+                let result = UIImage(cgImage: output!)
+                imageView?.image = result
+            }
+        }
+    }
+    
+    func runGPU(){
+        //Ensure image isn't nil;
+        //convert imageview's image to cgImage
+        guard let image = imageView?.image, let cgimg = image.cgImage else {
+            print("image view doesn't have an image")
+            return
+        }
+        
+        //Core Image 是作用在 CIImage, 而不是 UIImage. 所以，所有的UIImage 必須都轉成 CIImage
+        let coreImage = CIImage(cgImage: cgimg)
+        
+        /* 為效能問題, 將影像處理透過 CIContext 由CPU 轉到 GPU 處理 -- Step A  */
+        // 建立新的 OpenGL ES context, 它是一個高速的圖形API, 由 GPU 直接產生
+        // 此例使用的是 OpenGL ES V2 的版本. 大部份 iOS 設備支援此版本.
+        // 最新出到 ES V3. 如果設備有支援, 改為 openGLES3 即可
+        let openGLContext = EAGLContext(api: .openGLES2)
+        // 因為我們不能直接使用 OpenGL ES context 做影像過濾, 所以在這將它轉為 CIContext
+        let context = CIContext(eaglContext: openGLContext!)
+
+        /* --------------- 使用單一過濾器 ----------------------------------- */
+        //使用 Core Image 內建的過濾器
+        let filter = CIFilter(name: "CISepiaTone")
+        //將圖放到過濾器中
+        filter?.setValue(coreImage, forKey: kCIInputImageKey)
+        //指定過濾強度為 50%
+        filter?.setValue(0.5, forKey: kCIInputIntensityKey)
+
+        //呼叫 CoreImage 執行照片過濾, 並強制轉為 CIImage 格式
+        if let output = filter?.value(forKey: kCIOutputImageKey) as?  CIImage{
+            /*  呼叫 GPU 執行影像處理 Step B  */
             // V1: let cgimgresult = context.createCGImage(output, fromRect: output.extent)
-            // V2:  
+            // V2:
             // 在此我們使用的是 CGImage 的影像, 而不是 CIImage. V1 的 fromRect 是指定影像大小, 但V2 不支援
             // extent 代表的是 "影像大小(image size)"
             let cgimgresult = context.createCGImage(output, from: output.extent)
@@ -66,12 +144,5 @@ class ViewController: UIViewController {
             print("Image filtering failed")
         }
     }
-
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
-    }
-
-
 }
 
